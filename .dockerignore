@@ -1,0 +1,44 @@
+# Keep the build context small and avoid leaking secrets.
+
+# Node / Bun
+node_modules/
+buncache/
+bun.lockb
+*.log
+
+# Build output
+dist/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# VCS
+.git/
+.gitignore
+.gitattributes
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Tests / coverage
+tests/
+coverage/
+
+# CI
+.github/
+
+# Docker (avoid recursive context)
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# Docs
+*.md
+LICENSE
