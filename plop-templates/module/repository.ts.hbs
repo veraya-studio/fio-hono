@@ -1,0 +1,13 @@
+import type { PrismaClient } from '../../generated/prisma/client'
+
+export interface {{pascalCase name}}Repository {
+  ping: () => Promise<void>
+}
+
+export function create{{pascalCase name}}Repository(prisma: PrismaClient): {{pascalCase name}}Repository {
+  return {
+    async ping() {
+      await prisma.$queryRaw`SELECT 1`
+    },
+  }
+}

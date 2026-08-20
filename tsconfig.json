@@ -1,29 +1,29 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "lib": ["ESNext", "WebWorker"],
+    "baseUrl": ".",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ESNext"],
-    "types": ["bun"],
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "verbatimModuleSyntax": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "resolveJsonModule": true,
+    "types": ["bun", "@cloudflare/vitest-pool-workers/types", "./worker-configuration.d.ts"],
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
   },
-  "include": ["src/**/*", "tests/**/*", "eslint.config.js", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist", "logs", "coverage"]
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*", "worker-tests/**/*", "eslint.config.js", "plopfile.ts", "prisma.config.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
 }

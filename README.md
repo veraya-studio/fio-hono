@@ -1,272 +1,227 @@
-# pio-bun-minimal-boilerplate
+# fio-hono-cf
 
-A minimal, production-shaped boilerplate for building HTTP servers on top of
-[Bun](https://bun.sh). It ships with sensible defaults for logging,
-environment validation, HTTP calls, linting, and a small optional CLI — without
-locking you into a framework.
+Workers-native API boilerplate built with Hono, Cloudflare D1, Prisma, JWT,
+OpenAPI, and Scalar. Bun remains the package manager and unit-test runner; the
+production runtime is Cloudflare Workers only.
 
-> Bun ≥ 1.3 · TypeScript strict · MIT
+## Stack
 
----
-
-## Why
-
-Most "minimal Bun boilerplates" either give you a 5-line `Bun.serve` snippet
-that falls over the moment you add a third route, or they hand you a full
-framework (Hono/Elysia) plus a kitchen-sink of opinions. This one sits in the
-middle:
-
-- **Bun-native** — uses `Bun.serve` directly, no framework.
-- **Server-first** — the HTTP server is the primary entry point (`src/server.ts`).
-  A small CLI in `src/cli/` is included as a starting point you can keep,
-  extend, or delete depending on your needs.
-- **Framework-free core** — routing, middleware, and error handling are ~80
-  lines of plain code in `src/app.ts`. You can read it in one sitting.
-- **Production-shaped plumbing** — environment validation, structured logging
-  with log rotation, an HTTP client wrapper, and graceful shutdown.
-- **Strict & linted** — TypeScript `strict: true` and
-  [antfu's ESLint config](https://github.com/antfu/eslint-config) out of the box.
-- **Bun-native tests** — `bun test` runs everything; no separate test
-  framework, no extra config. The test suite covers the HTTP app and the
-  optional CLI (unit + subprocess).
-
----
+- Hono with `@hono/zod-openapi`
+- Cloudflare Workers and D1
+- Prisma 7 with the D1 driver adapter
+- HS256 Bearer JWT through `hono/jwt`
+- PBKDF2-HMAC-SHA256 password hashing through Web Crypto
+- `hono/cors`
+- Scalar API Reference at `/docs`
+- Winston JSON logs through the Console transport and Workers Logs
+- Bun unit tests plus Vitest Workers integration tests
 
 ## Quick start
 
 ```bash
-# 1. Install Bun (skip if you already have it)
-curl -fsSL https://bun.sh/install | bash
-
-# 2. Install dependencies
 bun install
-
-# 3. Copy env file
-cp .env.example .env
-
-# 4. Run the server (hot reload)
+cp .dev.vars.example .dev.vars
+bun run db:migrate:local
 bun run dev
-
-# 5. In another terminal, hit the health endpoint
-curl http://localhost:3000/healthz
 ```
 
-Expected response:
-
-```json
-{ "ok": true, "data": { "status": "ok", "uptime": 0.42, "env": "development", "timestamp": "..." } }
-```
-
----
-
-## Architecture
-
-```
-                ┌──────────────────────────────────────────────┐
-                │        Optional CLI  (src/cli/index.ts)      │
-                │   pio info · pio fetch /path · pio serve     │
-                └──────────────────────────────────────────────┘
-                                  │
-                                  │  shares src/lib/*
-                                  ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    HTTP Server (Bun.serve)                   │
-│                                                              │
-│   request  →  middleware chain  →  route dispatch            │
-│                                                              │
-│   errorHandler  →  requestLogger  →  cors  →  routes         │
-└──────────────────────────────────────────────────────────────┘
-            │                │                │
-            ▼                ▼                ▼
-      ┌──────────┐     ┌──────────┐     ┌──────────────┐
-      │  logger  │     │   env    │     │   fetcher    │
-      │ winston  │     │ envalid  │     │   ofetch     │
-      │ + rotate │     │ (schema) │     │ (HTTP client)│
-      └──────────┘     └──────────┘     └──────────────┘
-```
-
-The server is the **primary entry point**. The CLI is a small companion that
-reuses the same `env`, `logger`, and `fetcher` modules — there is no shared
-startup flow between them. If you don't need a CLI, delete `src/cli/` and the
-`bin` field in `package.json`; nothing else has to change.
-
-**Request flow**
-
-1. `Bun.serve` receives the request and hands it to `createApp()` in
-   `src/app.ts`.
-2. The middleware chain runs outermost-first:
-   - `errorHandler` — catches everything, converts known errors to JSON, masks
-     unknowns as 500.
-   - `requestLogger` — logs method, path, status, duration.
-   - `cors` — sets CORS headers and short-circuits `OPTIONS` preflight.
-3. Dispatcher matches `(method, path)` against the flat `routes` table in
-   `src/routes/index.ts`.
-4. The matched handler runs and returns a `Response` built by the helpers in
-   `src/lib/http.ts` (so every endpoint speaks `{ ok, data | error }`).
-
----
-
-## Folder structure
-
-```
-pio-bun-minimal-boilerplate/
-├── src/
-│   ├── server.ts              # HTTP entry point (Bun.serve) — primary
-│   ├── app.ts                 # App factory: middleware chain + route dispatch
-│   ├── cli/
-│   │   └── index.ts           # Optional CLI (cac) — remove if not needed
-│   ├── routes/
-│   │   ├── index.ts           # Flat route table
-│   │   ├── health.ts          # GET /healthz
-│   │   └── echo.ts            # POST /echo (Zod-validated example)
-│   ├── middleware/
-│   │   ├── error-handler.ts   # Global error → JSON
-│   │   ├── logger.ts          # Per-request access log
-│   │   └── cors.ts            # CORS headers + preflight
-│   └── lib/
-│       ├── env.ts             # envalid schema for process.env
-│       ├── logger.ts          # winston + daily-rotate-file
-│       ├── http.ts            # json/fail/HttpError helpers
-│       └── fetcher.ts         # shared ofetch client
-├── tests/
-│   └── health.test.ts         # bun:test smoke tests
-├── logs/                      # rotated log files (gitignored)
-├── .env.example
-├── .gitignore
-├── bunfig.toml                # local Bun config (registry)
-├── eslint.config.js           # antfu ESLint config
-├── tsconfig.json              # strict TS
-├── package.json
-├── LICENSE                    # MIT
-└── README.md
-```
-
-### When to grow this structure
-
-The boilerplate is intentionally flat. Promote to per-feature folders once
-you hit **~5+ endpoints for one resource**:
-
-```
-src/
-└── routes/
-    └── users/
-        ├── users.routes.ts
-        ├── users.service.ts
-        ├── users.schema.ts
-        └── users.test.ts
-```
-
-### Removing the CLI
-
-The CLI is optional. To strip it out:
-
-1. Delete `src/cli/`.
-2. Remove the `bin` field from `package.json`.
-3. Remove the `cli` and `cac` scripts/dependencies you no longer want.
-
-No code in `src/server.ts` or `src/lib/` references the CLI, so removing it
-is risk-free.
-
----
-
-## Scripts
-
-| Command              | What it does                                          |
-| -------------------- | ----------------------------------------------------- |
-| `bun run dev`        | Start the server with hot reload (`bun --hot`)        |
-| `bun run start`      | Start the server (no reload)                          |
-| `bun run cli`        | Run the optional CLI (`info`, `fetch <path>`, `serve`)|
-| `bun run build`      | Minified build via `bun build` → `dist/`              |
-| `bun run lint`       | Run ESLint (antfu config)                             |
-| `bun run lint:fix`   | Auto-fix lint issues                                  |
-| `bun run typecheck`  | `tsc --noEmit`                                        |
-| `bun test`           | Run tests (bun:test)                                  |
-
-### CLI examples
+Set `JWT_SECRET` in `.dev.vars` to at least 32 random bytes. One way to create
+one is:
 
 ```bash
-# Print runtime info
-bun run cli info
-
-# Fetch a path through the shared ofetch client
-bun run cli fetch /todos/1
+openssl rand -base64 32
 ```
 
----
+The local API runs at `http://localhost:8787` by default. Open Scalar at
+`http://localhost:8787/docs`.
 
-## Environment variables
+## Project structure
 
-Validated at startup by `envalid` (see `src/lib/env.ts`). Missing or invalid
-values throw immediately — no silent defaults, no broken runtime.
+```text
+src/
+  index.ts                    # Cloudflare Worker entrypoint
+  app.ts                      # Hono composition root
+  lib/                        # config, errors, HTTP envelope, crypto, Prisma
+  middleware/                 # request logger, Prisma context, JWT auth
+  modules/
+    auth/                     # route, schema, service, repository, factory
+    users/                    # route, schema, service, repository, factory
+prisma/schema.prisma          # Prisma data model
+migrations/                   # SQL applied by Wrangler D1
+tests/                        # Bun unit tests
+worker-tests/                 # Vitest tests inside the Workers runtime
+scripts/                      # smoke, migration, and baseline comparison tools
+plopfile.ts                   # module generator configuration
+plop-templates/module/        # standardized module layer templates
+```
 
-| Var              | Default                              | Notes                                |
-| ---------------- | ------------------------------------ | ------------------------------------ |
-| `PORT`           | `3000`                               | TCP port for `Bun.serve`             |
-| `HOST`           | `0.0.0.0`                            | Bind address                         |
-| `NODE_ENV`       | `development`                        | `development` / `test` / `production`|
-| `LOG_LEVEL`      | `info`                               | winston level                        |
-| `LOG_DIR`        | `./logs`                             | Where rotated logs land              |
-| `LOG_MAX_SIZE`   | `20m`                                | Per-file rotation threshold          |
-| `LOG_MAX_FILES`  | `14d`                                | Retention window                     |
-| `API_BASE_URL`   | `https://jsonplaceholder.typicode.com` | Used by the fetcher example        |
-| `API_TIMEOUT_MS` | `10000`                              | ofetch timeout                       |
+Routes only translate HTTP and validation concerns. Services own business
+rules, and repositories are the only layer that calls Prisma. Dependencies are
+passed through factory functions; there is no container or class hierarchy.
 
----
+Each API request gets its own `PrismaClient` backed by `new PrismaD1(env.DB)`.
+The client, request-scoped Winston logger, and request ID live in Hono context.
+No mutable request state is kept at module scope.
+
+## Generate a module
+
+Create and register a new module from the command line:
+
+```bash
+bun run generate:module products
+```
+
+The generator creates `index`, `schema`, `repository`, `service`, and `routes`
+files under `src/modules/products/`, then mounts the module at
+`/api/v1/products` in `src/app.ts`. Generated modules start with a compile-ready
+`GET /status` example that demonstrates the expected HTTP → service → repository
+flow. Replace that example with the module's actual business behavior.
+
+Module names may contain letters and numbers separated by spaces, dashes, or
+underscores. Plop normalizes file and route names to dash-case and exported
+symbols to PascalCase. Generation aborts instead of overwriting an existing
+module.
+
+## API
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/healthz` | No | Health check |
+| `POST` | `/api/v1/auth/register` | No | Register and return an access token |
+| `POST` | `/api/v1/auth/login` | No | Login and return an access token |
+| `GET` | `/api/v1/auth/me` | Bearer | Read the current user |
+| `PATCH` | `/api/v1/users/me` | Bearer | Change the current user's name |
+| `DELETE` | `/api/v1/users/me` | Bearer | Delete the current user |
+| `GET` | `/openapi.json` | No | OpenAPI 3.1 document |
+| `GET` | `/docs` | No | Scalar API Reference |
+
+Every JSON response uses one of these envelopes:
+
+```json
+{ "ok": true, "data": {} }
+```
+
+```json
+{ "ok": false, "error": { "message": "...", "code": "..." } }
+```
+
+Validation, authentication, missing resources, duplicate email, and unknown
+errors map to HTTP 400, 401, 404, 409, and 500 respectively. Unknown errors are
+logged but their internal details are not returned.
+
+## Configuration
+
+Non-secret defaults live in `wrangler.jsonc`:
+
+| Binding | Default |
+| --- | --- |
+| `JWT_ISSUER` | `fio-hono-cf` |
+| `JWT_AUDIENCE` | `fio-hono-api` |
+| `JWT_TTL_SECONDS` | `3600` |
+| `CORS_ORIGINS` | `*` (comma-separated values are supported) |
+| `LOG_LEVEL` | `info` |
+
+For production, store the JWT secret interactively instead of committing it:
+
+```bash
+bunx wrangler secret put JWT_SECRET
+```
+
+`wrangler.jsonc` deliberately omits an account ID and D1 database ID. Wrangler
+4.45+ can provision the declared resource when deploying. No remote database
+or Worker is created by setup commands in this repository.
+
+Run `bun run cf-typegen` whenever bindings change. It reads the example secret
+name and generates `CloudflareBindings` in the ignored
+`worker-configuration.d.ts`; binding types are not duplicated by hand.
+
+## Database workflow
+
+Generate the client and apply the checked-in migration locally:
+
+```bash
+bun run db:generate
+bun run db:migrate:local
+```
+
+After changing `prisma/schema.prisma`, create the next SQL migration from the
+actual local D1 schema, inspect it, then apply it:
+
+```bash
+bun run db:migration:create add_profile_fields
+bun run db:migrate:local
+bun run db:migrate:remote
+```
+
+Prisma 7 removed the older `--from-local-d1` flag. The migration helper uses
+the supported equivalent: `listLocalDatabases()` plus
+`prisma migrate diff --from-config-datasource --to-schema ... --script`.
+
+Do not use `prisma migrate dev`, `prisma db push`, or Prisma `$transaction`
+with this boilerplate. Prisma's D1 adapter remains Preview, and interactive
+transactions do not provide the expected ACID guarantees here.
+
+## Authentication notes
+
+- Emails are trimmed and stored lowercase.
+- Passwords use a unique 16-byte salt, PBKDF2-HMAC-SHA256, 600,000 iterations,
+  and a constant-time comparison. Algorithm metadata, iterations, salt, and
+  hash are encoded together in the single `User.password` database field;
+  plaintext passwords are never stored.
+- Access tokens include `sub`, `email`, `iat`, `exp`, `iss`, and `aud` claims.
+- JWT secrets shorter than 32 bytes fail closed.
+- Refresh tokens, logout blacklists, RBAC, password reset, and email/password
+  changes are intentionally outside this starter's scope.
+
+## Logging
+
+Winston writes structured JSON through its Console transport. Cloudflare
+Workers Logs captures that output with `requestId`, method, path, status, and
+duration. File rotation is intentionally absent because the Workers filesystem
+is temporary and is not persistent log storage.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `bun run dev` | Generate types/client and start local Wrangler |
+| `bun run deploy` | Generate artifacts and deploy (creates remote state) |
+| `bun run build` | Wrangler dry-run bundle to `dist/` |
+| `bun run cf-typegen` | Generate Workers bindings/runtime types |
+| `bun run generate:module <name>` | Create and register a standardized feature module |
+| `bun run db:generate` | Generate Prisma Client |
+| `bun run db:migration:create <name>` | Diff local D1 into a new SQL migration |
+| `bun run db:migrate:local` | Apply D1 migrations locally |
+| `bun run db:migrate:remote` | Apply D1 migrations remotely |
+| `bun run typecheck` | Generate artifacts and run TypeScript |
+| `bun run lint` | Run ESLint |
+| `bun run postinstall` | Regenerate binding types and Prisma Client |
+| `bun test` | Run Bun unit tests |
+| `bun run test:worker` | Run isolated Workers + D1 integration tests |
+| `bun run smoke` | Check health and 404 on a running local Worker |
+| `bun run compare-prod` | Compare health/404 against HEAD in a temp worktree |
+
+For smoke testing, start `bun run dev` first. Override its target with
+`BASE_URL=https://example.workers.dev bun run smoke`.
+
+The compare script creates a detached temporary worktree at current `HEAD`,
+starts the old and new servers on ports 8790/8791, compares normalized health
+and 404 contracts, then removes the worktree. It does not deploy either build.
+
+## Verification
+
+```bash
+bun run typecheck
+bun run lint
+bun test
+bun run test:worker
+bun run build
+```
+
+The Vitest pool currently bundles workerd compatibility through `2026-08-15`,
+so the test config overrides only its local emulator date. Production remains
+on the requested `2026-08-19` compatibility date in `wrangler.jsonc`.
 
 ## License
 
-MIT © [Toya Labs](https://github.com/Toya-Labs)
-
----
-
-## Docker
-
-The repo ships a multi-stage `Dockerfile` and `docker-compose.yml` ready for
-production-ish deployment. The image is based on `oven/bun:1.3.14-alpine`,
-runs as a non-root user, and includes a healthcheck against `/healthz`.
-
-### Build & run with Docker Compose (recommended)
-
-```bash
-docker compose up --build
-# detached:
-docker compose up -d --build
-# tail logs:
-docker compose logs -f app
-# stop:
-docker compose down
-```
-
-The service exposes port `3000` by default (override with `PORT=…` in your
-shell or a `.env` file in the project root — `docker-compose.yml` reads it).
-
-### Build & run with plain Docker
-
-```bash
-docker build -t pio-bun-minimal-boilerplate .
-docker run --rm -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e LOG_LEVEL=info \
-  -v "$(pwd)/logs:/app/logs" \
-  pio-bun-minimal-boilerplate
-```
-
-### Image details
-
-- **Multi-stage build** — `deps` (full install) → `build` (compile) →
-  `prod-deps` (production-only install) → `runner` (slim final image).
-- **Production deps only** in the final image (`bun install --production`).
-- **Non-root user** (`bun`, uid 1000) for the runtime stage.
-- **Logs volume** — mount `/app/logs` to keep rotated logs out of the
-  container filesystem.
-- **Healthcheck** — `wget` against `/healthz` every 30s.
-
-### Reusing for other projects
-
-This `Dockerfile` is intentionally generic. To use it as a template for any
-Bun-based service:
-
-1. Copy `Dockerfile` and `.dockerignore` into the new project.
-2. Adjust `CMD` if your entry point isn't `src/server.ts`.
-3. The `docker-compose.yml` here is a working baseline — copy and edit
-   environment variables, port mappings, and volume mounts as needed.
+MIT © [Yottabyte](https://github.com/Yottabyte)

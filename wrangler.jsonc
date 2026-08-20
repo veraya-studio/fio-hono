@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fio-hono-cf",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "JWT_ISSUER": "fio-hono-cf",
+    "JWT_AUDIENCE": "fio-hono-api",
+    "JWT_TTL_SECONDS": "3600",
+    "CORS_ORIGINS": "*",
+    "LOG_LEVEL": "info"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fio-hono-db",
+      "migrations_dir": "migrations",
+      "database_id": "c932051d-15d3-4b7a-b574-18f2407663e1"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  }
+}

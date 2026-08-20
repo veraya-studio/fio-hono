@@ -1,41 +1,124 @@
-import { errorHandler } from './middleware/error-handler'
-import { requestLogger } from './middleware/logger'
-import { cors } from './middleware/cors'
-import { routes } from './routes'
-import { fail } from './lib/http'
+import type { AppEnv } from './types'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import { Scalar } from '@scalar/hono-api-reference'
+import { cors } from 'hono/cors'
+import { HTTPException } from 'hono/http-exception'
+import { getCorsOrigins } from './lib/config'
+import { AppError, isUniqueConstraintError } from './lib/errors'
+import { errorBody, successSchema } from './lib/http'
+import { prismaContext, requestContext } from './middleware/request-context'
+import { createAuthModule } from './modules/auth'
+import { createPlopCheckModule } from './modules/plop-check'
+import { createUsersModule } from './modules/users'
+// plop:module-imports
 
-export type Handler = (request: Request) => Response | Promise<Response>
-export type Middleware = (request: Request, next: Handler) => Response | Promise<Response>
-export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS'
-export type Route = [Method, string, Handler]
-export type Routes = Route[]
+const HealthResponseSchema = successSchema(z.object({
+  status: z.literal('ok'),
+  timestamp: z.iso.datetime(),
+})).openapi('HealthResponse')
 
-interface AppOptions {
-  cors?: boolean
-}
+const healthRoute = createRoute({
+  method: 'get',
+  path: '/healthz',
+  tags: ['System'],
+  summary: 'Check Worker health',
+  responses: {
+    200: {
+      description: 'Worker is healthy',
+      content: { 'application/json': { schema: HealthResponseSchema } },
+    },
+  },
+})
 
-/**
- * Composes the middleware chain (outermost first) and returns a single
- * request handler. Keeping app.ts framework-free makes it trivial to test.
- */
-export function createApp(options: AppOptions = {}) {
-  const stack: Middleware[] = [errorHandler, requestLogger]
-  if (options.cors !== false) stack.push(cors())
+export function createApp() {
+  const app = new OpenAPIHono<AppEnv>({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        return c.json(
+          errorBody('Invalid request', 'VALIDATION_ERROR', result.error.issues),
+          400,
+        )
+      }
+    },
+  })
 
-  const composed: Middleware = stack.reduceRight<Middleware>(
-    (next, mw) => (request => mw(request, next)),
-    async (request) => dispatch(request),
-  )
+  app.use('*', requestContext)
+  app.use('*', async (c, next) => {
+    const allowedOrigins = getCorsOrigins(c.env)
+    return cors({
+      origin: (origin) => {
+        if (allowedOrigins.includes('*'))
+          return '*'
 
-  async function dispatch(request: Request): Promise<Response> {
-    const url = new URL(request.url)
-    const match = routes.find(([method, path]) => method === request.method && path === url.pathname)
-    if (!match) return fail(404, `Route not found: ${request.method} ${url.pathname}`, 'NOT_FOUND')
-    const [, , handler] = match
-    return handler(request)
-  }
+        return allowedOrigins.includes(origin) ? origin : null
+      },
+      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization'],
+      credentials: false,
+      maxAge: 600,
+    })(c, next)
+  })
+  app.use('/api/v1/*', prismaContext)
 
-  return async function app(request: Request): Promise<Response> {
-    return composed(request)
-  }
+  app.openapi(healthRoute, (c) => {
+    return c.json({
+      ok: true as const,
+      data: {
+        status: 'ok' as const,
+        timestamp: new Date().toISOString(),
+      },
+    }, 200)
+  })
+
+  app.route('/api/v1/auth', createAuthModule())
+  app.route('/api/v1/users', createUsersModule())
+  app.route('/api/v1/plop-check', createPlopCheckModule())
+  // plop:module-routes
+
+  app.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'JWT',
+  })
+
+  app.doc31('/openapi.json', {
+    openapi: '3.1.0',
+    info: {
+      title: 'fio-hono API',
+      version: '1.0.0',
+      description: 'Hono + Cloudflare Workers boilerplate API.',
+    },
+  })
+
+  app.get('/docs', Scalar({
+    url: '/openapi.json',
+    pageTitle: 'fio-hono API Reference',
+    theme: 'kepler',
+  }))
+
+  app.notFound((c) => {
+    return c.json(errorBody('Route not found', 'NOT_FOUND'), 404)
+  })
+
+  app.onError((error, c) => {
+    if (error instanceof AppError)
+      return c.json(errorBody(error.message, error.code, error.details), error.status)
+
+    if (error instanceof HTTPException && error.status === 401)
+      return c.json(errorBody('Unauthorized', 'UNAUTHORIZED'), 401)
+
+    if (isUniqueConstraintError(error))
+      return c.json(errorBody('Email is already registered', 'EMAIL_ALREADY_EXISTS'), 409)
+
+    c.get('logger')?.error('unhandled error', {
+      method: c.req.method,
+      path: c.req.path,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+
+    return c.json(errorBody('Internal server error', 'INTERNAL_ERROR'), 500)
+  })
+
+  return app
 }

@@ -1,0 +1,32 @@
+import type { AppEnv } from '../../types'
+import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
+import { errorResponse } from '../../lib/http'
+import { create{{pascalCase name}}Repository } from './{{dashCase name}}.repository'
+import { {{pascalCase name}}StatusResponseSchema } from './{{dashCase name}}.schema'
+import { create{{pascalCase name}}Service } from './{{dashCase name}}.service'
+
+const statusRoute = createRoute({
+  method: 'get',
+  path: '/status',
+  tags: ['{{pascalCase name}}'],
+  summary: 'Check the {{dashCase name}} module',
+  responses: {
+    200: {
+      description: 'Module is ready',
+      content: { 'application/json': { schema: {{pascalCase name}}StatusResponseSchema } },
+    },
+    500: errorResponse('Internal server error'),
+  },
+})
+
+export function create{{pascalCase name}}Module() {
+  const app = new OpenAPIHono<AppEnv>()
+
+  app.openapi(statusRoute, async (c) => {
+    const service = create{{pascalCase name}}Service(create{{pascalCase name}}Repository(c.get('prisma')))
+    const status = await service.status()
+    return c.json({ ok: true as const, data: status }, 200)
+  })
+
+  return app
+}

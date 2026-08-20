@@ -4,17 +4,19 @@ dist/
 bun.lockb
 *.log
 
-# Bun runtime
+# Runtime and generated output
 buncache/
+.wrangler/
+src/generated/
+worker-configuration.d.ts
 
 # Env
 .env
 .env.local
 .env.*.local
-
-# Logs
-logs/
-*.log
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # Editor
 .vscode/

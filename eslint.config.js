@@ -9,13 +9,19 @@ export default antfu({
     semi: false,
   },
   rules: {
-    'ts/consistent-type-imports': ['error', { prefer: 'type-imports' }],
     'no-console': 'off',
   },
   ignores: [
     'dist/**',
     'node_modules/**',
-    'logs/**',
     'coverage/**',
+    'src/generated/**',
+    'worker-configuration.d.ts',
   ],
+}, {
+  files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
+  rules: {
+    'ts/consistent-type-imports': ['error', { prefer: 'type-imports' }],
+    'ts/explicit-function-return-type': 'off',
+  },
 })

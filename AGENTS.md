@@ -1,81 +1,91 @@
 # AGENTS.md
 
-Guide for AI / human agents working in the `pio-bun-minimal-boilerplate` repo.
+Guide for AI and human agents working in `fio-hono-cf`.
 
 ## Stack
-- **Runtime**: Bun `>=1.3.0` (see `engines` in `package.json`)
-- **Language**: TypeScript (`tsconfig.json`, strict)
-- **HTTP**: `Bun.serve` in `src/server.ts` (Hono app via `createApp()` in `src/app.ts`)
-- **CLI**: `cac` in `src/cli/index.ts` (entry: `bin.pio` → `bun run src/cli/index.ts`)
-- **Validation**: `envalid` (`src/lib/env.ts`) + `zod` (ad-hoc schemas)
-- **HTTP client**: `ofetch`
-- **Logger**: `winston` + `winston-daily-rotate-file` (output to `logs/`)
-- **Lint**: `eslint` + `@antfu/eslint-config`
-- **Test**: `bun test` (vitest-style)
 
-## Key Scripts
+- **Runtime**: Cloudflare Workers; Bun is the package manager and unit-test runner
+- **Language**: strict TypeScript
+- **HTTP**: Hono in `src/app.ts`, Worker entrypoint in `src/index.ts`
+- **Database**: Cloudflare D1 through Prisma 7 and `@prisma/adapter-d1`
+- **Validation/docs**: Zod through `@hono/zod-openapi`, Scalar at `/docs`
+- **Authentication**: HS256 Bearer JWT through `hono/jwt`
+- **Logger**: Winston Console JSON transport captured by Workers Logs
+- **Lint**: ESLint with `@antfu/eslint-config`
+- **Test**: Bun unit tests and Vitest Workers integration tests
+
+## Key scripts
+
 | Command | Purpose |
-|---|---|
-| `bun run dev` | Hot-reload server (default port `env.PORT`) |
-| `bun run start` | Production server (no reload) |
-| `bun run cli` | Run CLI (`pio <cmd>`) |
-| `bun run build` | Bundle to `dist/` (target `bun`) |
-| `bun test` | Run tests |
-| `bun run lint` / `lint:fix` | ESLint check / auto-fix |
-| `bun run typecheck` | `tsc --noEmit` |
+| --- | --- |
+| `bun run dev` | Generate types/client and start Wrangler locally |
+| `bun run deploy` | Generate artifacts and deploy the Worker |
+| `bun run build` | Wrangler dry-run build to `dist/` |
+| `bun run cf-typegen` | Generate Cloudflare binding/runtime types |
+| `bun run generate:module <name>` | Create and register a standardized feature module |
+| `bun run db:generate` | Generate Prisma Client |
+| `bun run db:migration:create <name>` | Generate SQL from the local D1 schema |
+| `bun run db:migrate:local` | Apply migrations to local D1 |
+| `bun run db:migrate:remote` | Apply migrations to remote D1 |
+| `bun test` | Run Bun unit tests |
+| `bun run test:worker` | Run Workers + D1 integration tests |
+| `bun run lint` / `lint:fix` | Check or fix ESLint |
+| `bun run typecheck` | Generate artifacts and run TypeScript |
 
-## Docker
-- `Dockerfile` + `docker-compose.yml` are already provided. Build context is the repo root.
-- `docker compose up --build` to run.
-- Host logs: mount `logs/` or tail container logs.
+## Folder structure
 
-## Folder Structure
-```
+```text
 src/
-  server.ts        # Bun.serve entry + graceful shutdown
-  app.ts           # createApp() — Hono app composition
-  cli/index.ts     # cac CLI entry
-  lib/             # env, logger, shared utils
-  middleware/      # Hono middleware
-  routes/          # HTTP route handlers
-tests/             # bun test files
-logs/              # rotated winston output
+  index.ts          # Worker entrypoint
+  app.ts            # Hono composition root
+  lib/              # shared config, crypto, errors, logging, Prisma
+  middleware/       # request context and JWT middleware
+  modules/          # feature route/schema/service/repository folders
+prisma/             # Prisma schema
+migrations/         # Wrangler D1 SQL migrations
+tests/              # Bun unit tests
+worker-tests/       # Vitest Workers integration tests
+scripts/            # migration, smoke, and comparison scripts
+plopfile.ts         # module generator configuration
+plop-templates/     # generator templates
 ```
 
 ## Conventions
-- **Path alias**: not set up yet (check `tsconfig.json` if you need to add one).
-- **Env**: add new vars to `src/lib/env.ts` (envalid) and `.env.example`.
-- **Logger**: use the `logger` from `src/lib/logger`. Do not use `console.log` directly.
-- **Error response**: standard shape `{ ok: false, error: { message } }` (see `server.ts`).
-- **Module type**: `"type": "module"` — ESM only, no CJS.
-- **License**: MIT. Public boilerplate.
 
-## Workflow for AI Agents
+- Keep HTTP, validation, and OpenAPI mapping in routes.
+- Keep business rules in services.
+- Repositories are the only module layer that calls Prisma.
+- Use `bun run generate:module <name>` as the starting point for new modules,
+  then replace its status example with feature-specific behavior.
+- Use factory functions and explicit dependency injection; no DI container.
+- Create Prisma and request logger state per request in Hono context.
+- Add non-secret bindings to `wrangler.jsonc`; add local secrets to
+  `.dev.vars.example` and regenerate binding types.
+- Use the logger from Hono context. Do not log credentials, JWTs, password
+  material, or other secrets.
+- Keep responses in `{ ok, data | error }` envelopes.
+- Do not use `prisma migrate dev`, `prisma db push`, or Prisma `$transaction`
+  with D1.
+- ESM only; no CommonJS.
 
-### Before editing
-1. Run `bun install` if `node_modules` is missing.
-2. Read the target file in full before changing it — do not assume.
-3. Check `src/lib/env.ts` first if you need a new env var.
+## Workflow
 
-### While editing
-- Prefer adding code in `lib/` / `middleware/` / `routes/` over patching `server.ts` directly.
-- Type safety first — `bun run typecheck` must be clean before commit.
-- Follow antfu style (auto-fix with `bun run lint:fix`).
+Before editing, install dependencies if needed and read each target file in
+full. Keep refactors lean and preserve unrelated working-tree changes.
 
-### Before declaring done
-Run **all** of these and make sure they pass:
+Before declaring done, run:
+
 ```bash
 bun run typecheck
 bun run lint
 bun test
+bun run test:worker
+bun run build
 ```
 
-If you touched the env schema, also update `.env.example`.
+Large refactors also require the smoke and compare-prod scripts. If bindings or
+secrets change, update `wrangler.jsonc` or `.dev.vars.example` and rerun
+`bun run cf-typegen`.
 
-### Refactor tasks
-- Lean mode by default — remove what is not needed, do not add abstractions.
-- A smoke test script + compare-prod script are required before merging any large refactor.
-
-### Commit & push
-- **"Push branch baru" = push only, no auto-PR**. The user opens the PR manually.
-- Commit messages can mix Indonesian and English.
+**"Push branch baru" means push only, without opening a PR.** The user opens
+the PR manually. Commit messages may mix Indonesian and English.

@@ -1,0 +1,14 @@
+import type { {{pascalCase name}}Repository } from './{{dashCase name}}.repository'
+import type { {{pascalCase name}}Status } from './{{dashCase name}}.schema'
+
+export function create{{pascalCase name}}Service(repository: {{pascalCase name}}Repository) {
+  return {
+    async status(): Promise<{{pascalCase name}}Status> {
+      await repository.ping()
+      return {
+        module: '{{dashCase name}}',
+        status: 'ready',
+      }
+    },
+  }
+}

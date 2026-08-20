@@ -1,6 +1,4 @@
-/**
- * Tiny response helpers so every handler speaks the same shape.
- */
+import { z } from '@hono/zod-openapi'
 
 export interface ApiSuccess<T> {
   ok: true
@@ -11,40 +9,47 @@ export interface ApiError {
   ok: false
   error: {
     message: string
-    code?: string
+    code: string
     details?: unknown
   }
 }
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiError
 
-export const json = <T>(data: T, init?: ResponseInit): Response =>
-  new Response(JSON.stringify({ ok: true, data } satisfies ApiSuccess<T>), {
-    ...init,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      ...(init?.headers ?? {}),
-    },
-  })
+export const ErrorResponseSchema = z.object({
+  ok: z.literal(false),
+  error: z.object({
+    message: z.string(),
+    code: z.string(),
+    details: z.unknown().optional(),
+  }),
+}).openapi('ErrorResponse')
 
-export const fail = (status: number, message: string, code?: string, details?: unknown): Response => {
-  const body: ApiError = { ok: false, error: { message, code, details } }
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+export function successSchema<T extends z.ZodType>(data: T) {
+  return z.object({
+    ok: z.literal(true),
+    data,
   })
 }
 
-export class HttpError extends Error {
-  public readonly status: number
-  public readonly code?: string
-  public readonly details?: unknown
+export function errorBody(message: string, code: string, details?: unknown): ApiError {
+  return {
+    ok: false,
+    error: {
+      message,
+      code,
+      ...(details === undefined ? {} : { details }),
+    },
+  }
+}
 
-  constructor(status: number, message: string, code?: string, details?: unknown) {
-    super(message)
-    this.name = 'HttpError'
-    this.status = status
-    this.code = code
-    this.details = details
+export function errorResponse(description: string) {
+  return {
+    description,
+    content: {
+      'application/json': {
+        schema: ErrorResponseSchema,
+      },
+    },
   }
 }
